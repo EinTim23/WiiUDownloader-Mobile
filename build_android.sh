@@ -7,7 +7,7 @@ python3 grabTitles.py
 
 cd ..
 
-NDK=$ANDROID_HOME/ndk/29.0.14206865
+NDK="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/29.0.14206865}"
 API=21
 PREBUILT=darwin-x86_64
 

@@ -1,0 +1,85 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+
+jobs:
+  build-android:
+    runs-on: macos-15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r29
+        add-to-path: false
+
+    - name: Setup golang
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: 'native_lib/go.mod'
+
+    - name: Setup Flutter SDK
+      uses: flutter-actions/setup-flutter@v4
+      with:
+        channel: stable
+        version: 3.41.3
+
+    - name: Install Flutter dependencies
+      run: flutter pub get
+
+    - name: Build code
+      run: zsh build_android.sh
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+    - name: Upload Android APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: "Wii U Downloader Android"
+        path: build/app/outputs/flutter-apk/app-release.apk
+
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-android]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./release-assets
+        merge-multiple: true
+    - name: Display structure of downloaded files
+      run: ls -R ./release-assets
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+
+    - name: Upload APK
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release-assets/app-release.apk
+        asset_name: app-release.apk
+        asset_content_type: application/octet-stream
