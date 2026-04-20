@@ -1,14 +1,17 @@
 #!/bin/bash
 set -e
 
-cd native_lib
+cd WiiUDownloader
 
 python3 grabTitles.py
+
+cd ..
 
 NDK=$ANDROID_HOME/ndk/29.0.14206865
 API=21
 PREBUILT=darwin-x86_64
 
+cd native_lib
 
 build() {
   ARCH=$1
@@ -27,8 +30,7 @@ build() {
 
   go build -buildmode=c-shared \
     -ldflags="-s -w" \
-    -o ../android/app/src/main/jniLibs/$ABI/libwiiudownloader.so \
-    ./ffi
+    -o ../android/app/src/main/jniLibs/$ABI/libwiiudownloader.so
 }
 
 # ARM64
