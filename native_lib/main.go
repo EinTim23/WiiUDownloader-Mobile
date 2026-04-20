@@ -99,7 +99,7 @@ func Search(query *C.char, category C.uint8_t, region C.uint8_t) C.TitleEntryArr
 			if regionFilter != 0 && e.Region&regionFilter == 0 {
 				continue
 			}
-			if goQuery != "" && !strings.Contains(strings.ToLower(e.Name), goQuery) {
+			if goQuery != "" && !titleMatchesSearch(goQuery, e.Name, strconv.FormatUint(e.TitleID, 16)) {
 				continue
 			}
 			filtered = append(filtered, e)
