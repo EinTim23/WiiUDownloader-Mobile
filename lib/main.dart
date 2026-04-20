@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
         overlays: [SystemUiOverlay.top]);
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -403,8 +403,10 @@ class SettingsTab extends StatefulWidget {
 class _SettingsTabState extends State<SettingsTab> {
   static const _prefKey = 'download_directory';
   static const _decryptKey = 'decrypt_on_download';
+  static const _keepScreenOnKey = 'keep_screen_on';
   String? _downloadDir;
   bool _decrypt = true;
+  bool _keepScreenOn = false;
   bool _loading = true;
 
   @override
@@ -418,6 +420,7 @@ class _SettingsTabState extends State<SettingsTab> {
     setState(() {
       _downloadDir = prefs.getString(_prefKey);
       _decrypt = prefs.getBool(_decryptKey) ?? true;
+      _keepScreenOn = prefs.getBool(_keepScreenOnKey) ?? false;
       _loading = false;
     });
   }
@@ -494,6 +497,17 @@ class _SettingsTabState extends State<SettingsTab> {
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool(_decryptKey, value);
                     setState(() => _decrypt = value);
+                  },
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.screen_lock_portrait),
+                  title: const Text('Keep screen on'),
+                  subtitle: const Text('Prevent sleep while downloads are active'),
+                  value: _keepScreenOn,
+                  onChanged: (value) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool(_keepScreenOnKey, value);
+                    setState(() => _keepScreenOn = value);
                   },
                 ),
               ],

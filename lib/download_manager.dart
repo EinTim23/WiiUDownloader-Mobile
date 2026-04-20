@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'ffi.dart';
 
 enum DownloadStatus { queued, downloading, decrypting, done, error, cancelled }
@@ -82,6 +84,19 @@ class DownloadManager extends ChangeNotifier {
     return status.isGranted;
   }
 
+  Future<void> _enableWakelockIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('keep_screen_on') ?? false) {
+      await WakelockPlus.enable();
+    }
+  }
+
+  Future<void> _disableWakelock() async {
+    if (await WakelockPlus.enabled) {
+      await WakelockPlus.disable();
+    }
+  }
+
   Future<void> _startForegroundService() async {
     if (_foregroundStarted) return;
     FlutterForegroundTask.init(
@@ -109,12 +124,14 @@ class DownloadManager extends ChangeNotifier {
       ),
     );
     _foregroundStarted = true;
+    await _enableWakelockIfNeeded();
   }
 
   Future<void> _stopForegroundService() async {
     if (!_foregroundStarted) return;
     await FlutterForegroundTask.stopService();
     _foregroundStarted = false;
+    await _disableWakelock();
   }
 
   void _updateNotification(DownloadEntry entry) {
