@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Project
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
   pull_request:
 
 jobs:
-  build-android:
+  build:
     runs-on: macos-15
 
     steps:
@@ -62,7 +62,7 @@ jobs:
 
   create-release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-android]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
     - name: Download artifacts
