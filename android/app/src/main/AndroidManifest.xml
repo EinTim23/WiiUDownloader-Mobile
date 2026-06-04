@@ -11,7 +11,8 @@
         android:label="WiiUDownloader"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
         <meta-data
             android:name="dev.eintim.wiiudownloader.NOTIFICATION_ICON"
             android:resource="@drawable/ic_stat_wiiudownloader" />

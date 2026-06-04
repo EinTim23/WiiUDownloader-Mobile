@@ -433,11 +433,19 @@ class _SettingsTabState extends State<SettingsTab> {
   }
 
   Future<bool> _ensureStoragePermission() async {
-    if(Platform.isIOS) {
+    if (Platform.isIOS) {
       return true;
     }
-    
-    PermissionStatus status = await Permission.manageExternalStorage.status;
+
+    // Android 10 and below use READ/WRITE storage runtime permission
+    PermissionStatus status = await Permission.storage.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.storage.request();
+    if (status.isGranted) return true;
+
+    // Newer versions use the manageExternalStorage permission
+    status = await Permission.manageExternalStorage.status;
     if (status.isGranted) return true;
 
     status = await Permission.manageExternalStorage.request();
@@ -449,7 +457,7 @@ class _SettingsTabState extends State<SettingsTab> {
       builder: (ctx) => AlertDialog(
         title: const Text('Permission Required'),
         content: const Text(
-          'Storage permission is required to set a download directory. '
+          'Storage access is required to set a download directory. '
           'Please grant it in app settings.',
         ),
         actions: [
