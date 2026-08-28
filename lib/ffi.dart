@@ -18,7 +18,6 @@ final class TitleEntry extends Struct {
   external int category;
 }
 
-
 final class TitleEntryArray extends Struct {
   external Pointer<TitleEntry> data;
 
@@ -26,17 +25,13 @@ final class TitleEntryArray extends Struct {
   external int length;
 }
 
-typedef search_native =
-    TitleEntryArray Function(Pointer<Utf8>, Uint8, Uint8);
+typedef search_native = TitleEntryArray Function(Pointer<Utf8>, Uint8, Uint8);
 
-typedef search_dart =
-    TitleEntryArray Function(Pointer<Utf8>, int, int);
+typedef search_dart = TitleEntryArray Function(Pointer<Utf8>, int, int);
 
-typedef free_native =
-    Void Function(TitleEntryArray);
+typedef free_native = Void Function(TitleEntryArray);
 
-typedef free_dart =
-    void Function(TitleEntryArray);
+typedef free_dart = void Function(TitleEntryArray);
 
 // DownloadTitle callback types
 typedef OnGameTitleNative = Void Function(Pointer<Utf8>);
@@ -45,36 +40,39 @@ typedef OnDecryptionNative = Void Function(Double);
 typedef OnSizeNative = Void Function(Int64);
 typedef OnDoneNative = Void Function(Pointer<Utf8>);
 
-typedef _DownloadTitleNative = Void Function(
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<NativeFunction<OnGameTitleNative>>,
-  Pointer<NativeFunction<OnProgressNative>>,
-  Pointer<NativeFunction<OnDecryptionNative>>,
-  Pointer<NativeFunction<OnSizeNative>>,
-  Pointer<Int32>,
-  Pointer<NativeFunction<OnDoneNative>>,
-  Int32,
-);
+typedef _DownloadTitleNative =
+    Void Function(
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<NativeFunction<OnGameTitleNative>>,
+      Pointer<NativeFunction<OnProgressNative>>,
+      Pointer<NativeFunction<OnDecryptionNative>>,
+      Pointer<NativeFunction<OnSizeNative>>,
+      Pointer<Int32>,
+      Pointer<NativeFunction<OnDoneNative>>,
+      Int32,
+      Int32,
+    );
 
-typedef _DownloadTitleDart = void Function(
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<NativeFunction<OnGameTitleNative>>,
-  Pointer<NativeFunction<OnProgressNative>>,
-  Pointer<NativeFunction<OnDecryptionNative>>,
-  Pointer<NativeFunction<OnSizeNative>>,
-  Pointer<Int32>,
-  Pointer<NativeFunction<OnDoneNative>>,
-  int,
-);
-
+typedef _DownloadTitleDart =
+    void Function(
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<NativeFunction<OnGameTitleNative>>,
+      Pointer<NativeFunction<OnProgressNative>>,
+      Pointer<NativeFunction<OnDecryptionNative>>,
+      Pointer<NativeFunction<OnSizeNative>>,
+      Pointer<Int32>,
+      Pointer<NativeFunction<OnDoneNative>>,
+      int,
+      int,
+    );
 
 final DynamicLibrary wiiudownloader = () {
   if (Platform.isAndroid) {
     return DynamicLibrary.open("libwiiudownloader.so");
   } else if (Platform.isIOS) {
-    return DynamicLibrary.process(); 
+    return DynamicLibrary.process();
   } else {
     throw UnsupportedError("Unsupported platform");
   }
@@ -96,10 +94,27 @@ final _setTempDir = wiiudownloader
     .lookup<NativeFunction<Void Function(Pointer<Utf8>)>>('SetTempDir')
     .asFunction<void Function(Pointer<Utf8>)>();
 
+final _fetchTMDSize = wiiudownloader
+    .lookup<NativeFunction<Int64 Function(Uint64, Int32)>>('FetchTMDSize')
+    .asFunction<int Function(int, int)>();
+
 void setTempDir(String dir) {
   final ptr = dir.toNativeUtf8();
   _setTempDir(ptr);
   calloc.free(ptr);
+}
+
+int fetchTMDSize(int titleId, {int version = -1}) {
+  final size = _fetchTMDSize(titleId, version);
+  if (size < 0) {
+    final versionText = version < 0 ? 'latest version' : 'version $version';
+    throw Exception(
+      'Failed to fetch size for title '
+      '${titleId.toRadixString(16).toUpperCase().padLeft(16, '0')} '
+      '($versionText)',
+    );
+  }
+  return size;
 }
 
 class TitleEntryData {
@@ -177,20 +192,24 @@ class DownloadTask {
   }) {
     _cancelledFlag = calloc<Int32>();
 
-    _gameTitleCb =
-        NativeCallable<OnGameTitleNative>.listener((Pointer<Utf8> ptr) {
+    _gameTitleCb = NativeCallable<OnGameTitleNative>.listener((
+      Pointer<Utf8> ptr,
+    ) {
       onGameTitle?.call(ptr.toDartString());
       malloc.free(ptr);
     });
 
-    _progressCb = NativeCallable<OnProgressNative>.listener(
-        (int downloaded, Pointer<Utf8> ptr) {
+    _progressCb = NativeCallable<OnProgressNative>.listener((
+      int downloaded,
+      Pointer<Utf8> ptr,
+    ) {
       onProgress?.call(downloaded, ptr.toDartString());
       malloc.free(ptr);
     });
 
-    _decryptionCb =
-        NativeCallable<OnDecryptionNative>.listener((double progress) {
+    _decryptionCb = NativeCallable<OnDecryptionNative>.listener((
+      double progress,
+    ) {
       onDecryptionProgress?.call(progress);
     });
 
@@ -206,7 +225,12 @@ class DownloadTask {
     });
   }
 
-  void start(String titleId, String outputPath, {bool decrypt = true}) {
+  void start(
+    String titleId,
+    String outputPath, {
+    bool decrypt = true,
+    int version = -1,
+  }) {
     final tidPtr = titleId.toNativeUtf8();
     final outPtr = outputPath.toNativeUtf8();
 
@@ -219,6 +243,7 @@ class DownloadTask {
       _sizeCb.nativeFunction,
       _cancelledFlag,
       _doneCb.nativeFunction,
+      version,
       decrypt ? 1 : 0,
     );
 
@@ -241,7 +266,6 @@ class DownloadTask {
     calloc.free(_cancelledFlag);
   }
 }
-  
 
 String categoryName(int category) {
   switch (category) {

@@ -24,7 +24,9 @@ class DownloadManager extends BaseDownloadManager {
   Future<void> init() async {
     await _notifications.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@drawable/ic_stat_wiiudownloader'),
+        android: AndroidInitializationSettings(
+          '@drawable/ic_stat_wiiudownloader',
+        ),
       ),
     );
     _notificationsReady = true;
@@ -87,8 +89,9 @@ class DownloadManager extends BaseDownloadManager {
 
   void _updateNotification(DownloadEntry entry) {
     if (!_notificationsReady) return;
-    final pct =
-        entry.totalSize > 0 ? (entry.downloaded * 100 ~/ entry.totalSize) : 0;
+    final pct = entry.totalSize > 0
+        ? (entry.downloaded * 100 ~/ entry.totalSize)
+        : 0;
 
     String body;
     if (entry.status == DownloadStatus.decrypting) {
@@ -140,8 +143,8 @@ class DownloadManager extends BaseDownloadManager {
       body: entry.status == DownloadStatus.done
           ? 'Download complete'
           : entry.status == DownloadStatus.error
-              ? 'Download failed: ${entry.error}'
-              : 'Download cancelled',
+          ? 'Download failed: ${entry.error}'
+          : 'Download cancelled',
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'download_complete',
@@ -158,19 +161,34 @@ class DownloadManager extends BaseDownloadManager {
   bool _isRunning = false;
 
   bool _hasActiveDownloads() {
-    return entries.any((e) =>
-        e.status == DownloadStatus.downloading ||
-        e.status == DownloadStatus.decrypting ||
-        e.status == DownloadStatus.queued);
+    return entries.any(
+      (e) =>
+          e.status == DownloadStatus.downloading ||
+          e.status == DownloadStatus.decrypting ||
+          e.status == DownloadStatus.queued,
+    );
   }
 
   @override
   Future<void> startDownload(
-      String titleId, String name, String outputPath, int category, {bool decrypt = true}) async {
+    String titleId,
+    String name,
+    String outputPath,
+    int category, {
+    bool decrypt = true,
+    int version = -1,
+  }) async {
     await _ensureNotificationPermission();
     await _startForegroundService();
 
-    final entry = DownloadEntry(titleId: titleId, name: name, outputPath: outputPath, category: category, decrypt: decrypt);
+    final entry = DownloadEntry(
+      titleId: titleId,
+      name: name,
+      outputPath: outputPath,
+      category: category,
+      decrypt: decrypt,
+      version: version,
+    );
     entries.add(entry);
     notifyListeners();
 
@@ -181,9 +199,9 @@ class DownloadManager extends BaseDownloadManager {
     if (_isRunning) return;
 
     final next = entries.cast<DownloadEntry?>().firstWhere(
-          (e) => e!.status == DownloadStatus.queued,
-          orElse: () => null,
-        );
+      (e) => e!.status == DownloadStatus.queued,
+      orElse: () => null,
+    );
     if (next == null) return;
 
     _isRunning = true;
@@ -253,7 +271,12 @@ class DownloadManager extends BaseDownloadManager {
       },
     );
 
-    entry.task!.start(id, outputPath, decrypt: entry.decrypt);
+    entry.task!.start(
+      id,
+      outputPath,
+      decrypt: entry.decrypt,
+      version: entry.version,
+    );
     _updateNotification(entry);
   }
 

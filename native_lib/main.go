@@ -86,6 +86,17 @@ func SetTempDir(dir *C.char) {
 	os.Setenv("TMPDIR", C.GoString(dir))
 }
 
+//export FetchTMDSize
+func FetchTMDSize(titleid C.uint64_t, version C.int) C.int64_t {
+	client := &http.Client{Timeout: 30 * time.Second}
+	size, err := wiiudownloader.FetchTMDSize(uint64(titleid), int(version), client)
+	if err != nil {
+		fmt.Println("failed to fetch TMD size:", err)
+		return -1
+	}
+	return C.int64_t(size)
+}
+
 //export Search
 func Search(query *C.char, category C.uint8_t, region C.uint8_t) C.TitleEntryArray {
 	// Initialize database if not already initialized
@@ -215,6 +226,7 @@ func DownloadTitle(
 	onSize C.OnSizeFn,
 	cancelled *C.int,
 	onDone C.OnDoneFn,
+	version C.int,
 	doDecrypt C.int,
 ) {
 	tid := C.GoString(titleid)
@@ -240,7 +252,7 @@ func DownloadTitle(
 		}
 		client := &http.Client{}
 		decrypt := doDecrypt != 0
-		err := wiiudownloader.DownloadTitle(tid, out, 0, decrypt, reporter, decrypt, client, out)
+		err := wiiudownloader.DownloadTitle(tid, out, int(version), decrypt, reporter, decrypt, client, out)
 		if err != nil {
 			C.callOnDone(onDone, C.CString(err.Error()))
 		} else {

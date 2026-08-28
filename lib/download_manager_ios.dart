@@ -35,24 +35,33 @@ class DownloadManagerIOS extends BaseDownloadManager {
   }
 
   bool _hasActiveDownloads() {
-    return entries.any((e) =>
-        e.status == DownloadStatus.downloading ||
-        e.status == DownloadStatus.decrypting ||
-        e.status == DownloadStatus.queued);
+    return entries.any(
+      (e) =>
+          e.status == DownloadStatus.downloading ||
+          e.status == DownloadStatus.decrypting ||
+          e.status == DownloadStatus.queued,
+    );
   }
 
   @override
   Future<void> startDownload(
-      String titleId, String name, String outputPath, int category,
-      {bool decrypt = true}) async {
+    String titleId,
+    String name,
+    String outputPath,
+    int category, {
+    bool decrypt = true,
+    int version = -1,
+  }) async {
     await _enableWakelockIfNeeded();
 
     final entry = DownloadEntry(
-        titleId: titleId,
-        name: name,
-        outputPath: outputPath,
-        category: category,
-        decrypt: decrypt);
+      titleId: titleId,
+      name: name,
+      outputPath: outputPath,
+      category: category,
+      decrypt: decrypt,
+      version: version,
+    );
     entries.add(entry);
     notifyListeners();
 
@@ -63,9 +72,9 @@ class DownloadManagerIOS extends BaseDownloadManager {
     if (_isRunning) return;
 
     final next = entries.cast<DownloadEntry?>().firstWhere(
-          (e) => e!.status == DownloadStatus.queued,
-          orElse: () => null,
-        );
+      (e) => e!.status == DownloadStatus.queued,
+      orElse: () => null,
+    );
     if (next == null) return;
 
     _isRunning = true;
@@ -138,7 +147,12 @@ class DownloadManagerIOS extends BaseDownloadManager {
       },
     );
 
-    entry.task!.start(id, outputPath, decrypt: entry.decrypt);
+    entry.task!.start(
+      id,
+      outputPath,
+      decrypt: entry.decrypt,
+      version: entry.version,
+    );
   }
 
   @override

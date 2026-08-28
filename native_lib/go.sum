@@ -1,5 +1,7 @@
 github.com/Xpl0itU/WiiUDownloader v0.0.0-20260827214838-3e05c4f17e8a h1:Uy9JJm4rtlzZJXW0xXXJovH7SuXm8cPOqjfTy9FQgxk=
 github.com/Xpl0itU/WiiUDownloader v0.0.0-20260827214838-3e05c4f17e8a/go.mod h1:UwKuw41hSrILgEGRuZRICN7NHmeM1zr9zGgUv8uqRi8=
+github.com/Xpl0itU/WiiUDownloader v0.0.0-20260828092838-2d5ec5b4a60c h1:AubpsY6ELQMnmGWOoqF253jc6DEo762EgUYffZpZlJ4=
+github.com/Xpl0itU/WiiUDownloader v0.0.0-20260828092838-2d5ec5b4a60c/go.mod h1:UwKuw41hSrILgEGRuZRICN7NHmeM1zr9zGgUv8uqRi8=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
 github.com/lithammer/fuzzysearch v1.1.8 h1:/HIuJnjHuXS8bKaiTMeeDlW2/AyIWk2brx1V8LFgLN4=
 github.com/lithammer/fuzzysearch v1.1.8/go.mod h1:IdqeyBClc3FFqSzYq/MXESsS4S0FsZ5ajtkr5xPLts4=

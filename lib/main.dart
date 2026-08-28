@@ -1,18 +1,27 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'ffi.dart';
 import 'download_manager.dart';
 import 'download_manager_ios.dart';
-import 'download_manager_base.dart';
 import 'ios_bookmark.dart';
 
-BaseDownloadManager get downloadManager => Platform.isIOS
-    ? DownloadManagerIOS.instance
-    : DownloadManager.instance;
+BaseDownloadManager get downloadManager =>
+    Platform.isIOS ? DownloadManagerIOS.instance : DownloadManager.instance;
+
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,12 +62,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
         systemNavigationBarColor: Colors.transparent,
         systemNavigationBarDividerColor: Colors.transparent,
-        systemNavigationBarIconBrightness: Brightness.dark));
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
-        overlays: [SystemUiOverlay.top]);
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.edgeToEdge,
+      overlays: [SystemUiOverlay.top],
+    );
   }
 
   @override
@@ -71,18 +85,9 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() => _currentIndex = index);
         },
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.search),
-            label: 'Search',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.download),
-            label: 'Downloads',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
+          NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+          NavigationDestination(icon: Icon(Icons.download), label: 'Downloads'),
+          NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
     );
@@ -101,6 +106,8 @@ class _SearchTabState extends State<SearchTab> {
   List<TitleEntryData> _results = [];
   int _selectedCategory = 4; // TITLE_CATEGORY_ALL
   int _selectedRegion = 0; // 0 = all regions
+  final Map<String, Future<int>> _titleSizeFutures = {};
+  static const _titleDatabaseUrl = 'https://wiiubrew.org/wiki/Title_database';
 
   static const _categories = {
     4: 'All',
@@ -129,7 +136,10 @@ class _SearchTabState extends State<SearchTab> {
   void _refresh() {
     setState(() {
       _results = search_title(
-          _searchController.text, _selectedCategory, _selectedRegion);
+        _searchController.text,
+        _selectedCategory,
+        _selectedRegion,
+      );
     });
   }
 
@@ -177,14 +187,18 @@ class _SearchTabState extends State<SearchTab> {
                     decoration: const InputDecoration(
                       labelText: 'Type',
                       border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     items: _categories.entries
-                        .map((e) => DropdownMenuItem(
-                              value: e.key,
-                              child: Text(e.value),
-                            ))
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) {
                       _selectedCategory = value!;
@@ -199,14 +213,18 @@ class _SearchTabState extends State<SearchTab> {
                     decoration: const InputDecoration(
                       labelText: 'Region',
                       border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     items: _regions.entries
-                        .map((e) => DropdownMenuItem(
-                              value: e.key,
-                              child: Text(e.value),
-                            ))
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) {
                       _selectedRegion = value!;
@@ -232,7 +250,7 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.download_outlined),
-                          onPressed: () => _startDownload(entry),
+                          onPressed: () => _showDownloadPreview(entry),
                         ),
                       );
                     },
@@ -243,26 +261,261 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
-  Future<void> _startDownload(TitleEntryData entry) async {
+  Future<int> _getTitleSize(TitleEntryData entry, int version) {
+    final titleId = entry.titleId;
+    final cacheKey = '$titleId:$version';
+    return _titleSizeFutures.putIfAbsent(
+      cacheKey,
+      () => Isolate.run(() => fetchTMDSize(titleId, version: version)),
+    );
+  }
+
+  Future<void> _showDownloadPreview(TitleEntryData entry) async {
+    final downloadPrefs = await _getDownloadPreferences();
+    if (downloadPrefs == null) return;
+
+    if (!mounted) return;
+    final versionController = TextEditingController();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          var useLatestVersion = true;
+          Future<int>? sizeFuture = _getTitleSize(entry, -1);
+          final titleHex = entry.titleId
+              .toRadixString(16)
+              .toUpperCase()
+              .padLeft(16, '0');
+
+          int? selectedVersion() {
+            if (useLatestVersion) return -1;
+            if (versionController.text.isEmpty) return null;
+            final version = int.tryParse(versionController.text);
+            if (version == null || version > 0x7FFFFFFF) return null;
+            return version;
+          }
+
+          void updateSizeFuture() {
+            final version = selectedVersion();
+            sizeFuture = version == null ? null : _getTitleSize(entry, version);
+          }
+
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final version = selectedVersion();
+              return AlertDialog(
+                title: Text(entry.name),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Type: ${categoryName(entry.category)}'),
+                      Text('Region: ${_regionName(entry.region)}'),
+                      Text('Title ID: $titleHex'),
+                      const SizedBox(height: 16),
+                      const Text('Version'),
+                      const SizedBox(height: 8),
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(value: true, label: Text('Latest')),
+                          ButtonSegment(value: false, label: Text('Specific')),
+                        ],
+                        selected: {useLatestVersion},
+                        onSelectionChanged: (selection) {
+                          setDialogState(() {
+                            useLatestVersion = selection.single;
+                            updateSizeFuture();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      if (!useLatestVersion)
+                        TextField(
+                          controller: versionController,
+                          decoration: InputDecoration(
+                            labelText: 'Version code',
+                            hintText: 'Numbers only',
+                            errorText:
+                                versionController.text.isNotEmpty &&
+                                    version == null
+                                ? 'Enter a valid version code'
+                                : null,
+                          ),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (_) {
+                            setDialogState(updateSizeFuture);
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        children: [
+                          const Text('Version codes can be found '),
+                          InkWell(
+                            onTap: _openTitleDatabase,
+                            child: Text(
+                              'here',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                          const Text('.'),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (sizeFuture == null)
+                        const Text('Enter a version code to fetch file size.')
+                      else
+                        FutureBuilder<int>(
+                          future: sizeFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState !=
+                                ConnectionState.done) {
+                              return const Row(
+                                children: [
+                                  SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Fetching file size...'),
+                                ],
+                              );
+                            }
+
+                            if (snapshot.hasError) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Could not fetch file size.'),
+                                  const SizedBox(height: 8),
+                                  TextButton.icon(
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('Retry'),
+                                    onPressed: () {
+                                      final version = selectedVersion();
+                                      if (version == null) return;
+                                      _titleSizeFutures.remove(
+                                        '${entry.titleId}:$version',
+                                      );
+                                      setDialogState(() {
+                                        sizeFuture = _getTitleSize(
+                                          entry,
+                                          version,
+                                        );
+                                      });
+                                    },
+                                  ),
+                                ],
+                              );
+                            }
+
+                            return Text(
+                              'File size: ${_formatBytes(snapshot.data!)}',
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  if (sizeFuture == null)
+                    FilledButton.icon(
+                      icon: const Icon(Icons.download),
+                      label: const Text('Add to queue'),
+                      onPressed: null,
+                    )
+                  else
+                    FutureBuilder<int>(
+                      future: sizeFuture,
+                      builder: (context, snapshot) {
+                        return FilledButton.icon(
+                          icon: const Icon(Icons.download),
+                          label: const Text('Add to queue'),
+                          onPressed: snapshot.hasData && version != null
+                              ? () {
+                                  Navigator.of(dialogContext).pop();
+                                  _startDownload(entry, version, downloadPrefs);
+                                }
+                              : null,
+                        );
+                      },
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      versionController.dispose();
+    }
+  }
+
+  Future<void> _openTitleDatabase() async {
+    final opened = await launchUrl(
+      Uri.parse(_titleDatabaseUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (opened || !mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open title database')),
+    );
+  }
+
+  Future<({SharedPreferences prefs, String directory})?>
+  _getDownloadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final dir = prefs.getString('download_directory');
-    if (dir == null || dir.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Set a download directory in Settings first'),
-        ),
-      );
-      return;
+    if (dir != null && dir.isNotEmpty) {
+      return (prefs: prefs, directory: dir);
     }
-    final titleHex =
-        entry.titleId.toRadixString(16).toUpperCase().padLeft(16, '0');
-    final decrypt = prefs.getBool('decrypt_on_download') ?? true;
-    downloadManager.startDownload(titleHex, entry.name, dir, entry.category, decrypt: decrypt);
-    if (!mounted) return;
+
+    if (!mounted) return null;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Started download: ${entry.name}')),
+      const SnackBar(
+        content: Text('Set a download directory in Settings first'),
+      ),
     );
+    return null;
+  }
+
+  Future<void> _startDownload(
+    TitleEntryData entry,
+    int version,
+    ({SharedPreferences prefs, String directory}) downloadPrefs,
+  ) async {
+    final prefs = downloadPrefs.prefs;
+    final titleHex = entry.titleId
+        .toRadixString(16)
+        .toUpperCase()
+        .padLeft(16, '0');
+    final decrypt = prefs.getBool('decrypt_on_download') ?? true;
+    await downloadManager.startDownload(
+      titleHex,
+      entry.name,
+      downloadPrefs.directory,
+      entry.category,
+      decrypt: decrypt,
+      version: version,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Started download: ${entry.name}')));
   }
 }
 
@@ -292,15 +545,6 @@ class _DownloadsTabState extends State<DownloadsTab> {
     if (mounted) setState(() {});
   }
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
   String _formatSpeed(double bytesPerSec) {
     if (bytesPerSec < 1024) return '${bytesPerSec.toInt()} B/s';
     if (bytesPerSec < 1024 * 1024) {
@@ -327,9 +571,7 @@ class _DownloadsTabState extends State<DownloadsTab> {
   }
 
   Widget _buildDownloadTile(DownloadEntry entry) {
-    final pct = entry.totalSize > 0
-        ? entry.downloaded / entry.totalSize
-        : 0.0;
+    final pct = entry.totalSize > 0 ? entry.downloaded / entry.totalSize : 0.0;
 
     String subtitle;
     switch (entry.status) {
@@ -339,8 +581,7 @@ class _DownloadsTabState extends State<DownloadsTab> {
         subtitle =
             '${_formatBytes(entry.downloaded)} / ${_formatBytes(entry.totalSize)} — ${_formatSpeed(entry.speed)}\n${entry.currentFile}';
       case DownloadStatus.decrypting:
-        subtitle =
-            'Decrypting... ${(entry.decryptionProgress * 100).toInt()}%';
+        subtitle = 'Decrypting... ${(entry.decryptionProgress * 100).toInt()}%';
       case DownloadStatus.done:
         subtitle = 'Complete';
       case DownloadStatus.error:
@@ -349,14 +590,14 @@ class _DownloadsTabState extends State<DownloadsTab> {
         subtitle = 'Cancelled';
     }
 
-    final isActive = entry.status == DownloadStatus.downloading ||
+    final isActive =
+        entry.status == DownloadStatus.downloading ||
         entry.status == DownloadStatus.decrypting ||
         entry.status == DownloadStatus.queued;
 
     return Dismissible(
       key: ObjectKey(entry),
-      direction:
-          isActive ? DismissDirection.none : DismissDirection.endToStart,
+      direction: isActive ? DismissDirection.none : DismissDirection.endToStart,
       background: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
@@ -375,8 +616,8 @@ class _DownloadsTabState extends State<DownloadsTab> {
                     onPressed: () => _manager.cancelDownload(entry),
                   )
                 : entry.status == DownloadStatus.done
-                    ? const Icon(Icons.check_circle, color: Colors.green)
-                    : const Icon(Icons.error, color: Colors.red),
+                ? const Icon(Icons.check_circle, color: Colors.green)
+                : const Icon(Icons.error, color: Colors.red),
           ),
           if (entry.status == DownloadStatus.downloading)
             Padding(
@@ -386,8 +627,7 @@ class _DownloadsTabState extends State<DownloadsTab> {
           if (entry.status == DownloadStatus.decrypting)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: LinearProgressIndicator(
-                  value: entry.decryptionProgress),
+              child: LinearProgressIndicator(value: entry.decryptionProgress),
             ),
           if (entry.status == DownloadStatus.queued)
             const Padding(
@@ -524,7 +764,9 @@ class _SettingsTabState extends State<SettingsTab> {
                 SwitchListTile(
                   secondary: const Icon(Icons.lock_open),
                   title: const Text('Decrypt after download'),
-                  subtitle: const Text('Decrypt downloaded content for emulators'),
+                  subtitle: const Text(
+                    'Decrypt downloaded content for emulators',
+                  ),
                   value: _decrypt,
                   onChanged: (value) async {
                     final prefs = await SharedPreferences.getInstance();
@@ -535,7 +777,9 @@ class _SettingsTabState extends State<SettingsTab> {
                 SwitchListTile(
                   secondary: const Icon(Icons.screen_lock_portrait),
                   title: const Text('Keep screen on'),
-                  subtitle: const Text('Prevent sleep while downloads are active'),
+                  subtitle: const Text(
+                    'Prevent sleep while downloads are active',
+                  ),
                   value: _keepScreenOn,
                   onChanged: (value) async {
                     final prefs = await SharedPreferences.getInstance();

@@ -2,3 +2,4 @@ _SetTempDir
 _Search
 _FreeTitleEntries
 _DownloadTitle
+_FetchTMDSize

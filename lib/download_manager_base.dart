@@ -9,6 +9,7 @@ class DownloadEntry {
   final String outputPath;
   final int category;
   final bool decrypt;
+  final int version;
   DownloadStatus status;
   int totalSize;
   int downloaded;
@@ -28,6 +29,7 @@ class DownloadEntry {
     required this.outputPath,
     required this.category,
     this.decrypt = true,
+    this.version = -1,
     this.status = DownloadStatus.queued,
     this.totalSize = 0,
     this.downloaded = 0,
@@ -60,8 +62,13 @@ abstract class BaseDownloadManager extends ChangeNotifier {
   Future<void> init();
 
   Future<void> startDownload(
-      String titleId, String name, String outputPath, int category,
-      {bool decrypt = true});
+    String titleId,
+    String name,
+    String outputPath,
+    int category, {
+    bool decrypt = true,
+    int version = -1,
+  });
 
   void cancelDownload(DownloadEntry entry);
 
