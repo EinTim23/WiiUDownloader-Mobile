@@ -108,7 +108,7 @@ func Search(query *C.char, category C.uint8_t, region C.uint8_t) C.TitleEntryArr
 			if regionFilter != 0 && e.Region&regionFilter == 0 {
 				continue
 			}
-			if goQuery != "" && !titleMatchesSearch(goQuery, e.Name, strconv.FormatUint(e.TitleID, 16)) {
+			if goQuery != "" && !titleMatchesSearch(goQuery, e.Name, fmt.Sprintf("%016x", e.TitleID)) {
 				continue
 			}
 			filtered = append(filtered, e)
@@ -193,7 +193,10 @@ func (r *callbackReporter) SetDownloadSize(size int64) {
 	C.callOnSize(r.onSize, C.int64_t(size))
 }
 
-func (r *callbackReporter) ResetTotals()                     {}
+func (r *callbackReporter) ResetTotals() {}
+func (r *callbackReporter) Done() <-chan struct{} {
+	return nil
+}
 func (r *callbackReporter) MarkFileAsDone(filename string)   {}
 func (r *callbackReporter) SetStartTime(startTime time.Time) {}
 
@@ -237,7 +240,7 @@ func DownloadTitle(
 		}
 		client := &http.Client{}
 		decrypt := doDecrypt != 0
-		err := wiiudownloader.DownloadTitle(tid, out, decrypt, reporter, decrypt, client)
+		err := wiiudownloader.DownloadTitle(tid, out, 0, decrypt, reporter, decrypt, client, out)
 		if err != nil {
 			C.callOnDone(onDone, C.CString(err.Error()))
 		} else {

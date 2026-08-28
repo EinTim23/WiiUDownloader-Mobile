@@ -32,17 +32,12 @@ func titleMatchesSearch(search, titleName, titleID string) bool {
 		return true
 	}
 
-	searchLower := strings.ToLower(search)
-	if strings.Contains(strings.ToLower(titleID), searchLower) {
-		return true
-	}
-
 	normalizedSearch := normalizeSearchText(search)
 	if normalizedSearch == "" {
 		return false
 	}
 
-	return titleNameMatchesSearch(normalizedSearch, normalizeSearchText(titleName))
+	return titleNameMatchesSearch(normalizedSearch, normalizeSearchText(titleName)) || titleNameMatchesSearch(normalizedSearch, normalizeSearchText(titleID))
 }
 
 func titleNameMatchesSearch(normalizedSearch, normalizedTitleName string) bool {
